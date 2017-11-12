@@ -69,7 +69,7 @@ class DBWNode(object):
         # init the vars
         self.current_velocity = None
         self.twist_cmd = None
-        self.dbw_enabled = True # For debugging, use true
+        self.dbw_enabled = False # For debugging, use true
         self.last_timestamp = rospy.get_time()
         # subscribe
         rospy.Subscriber("/current_velocity", TwistStamped, self.current_velocity_cb)
