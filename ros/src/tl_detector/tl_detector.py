@@ -10,8 +10,19 @@ from light_classification.tl_classifier import TLClassifier
 import tf
 import cv2
 import yaml
+import math
+from darknet import detect_redlight
 
 STATE_COUNT_THRESHOLD = 3
+
+class coord(object):
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+
+def get_coord(point):
+    return coord(point[0], point[1])
 
 class TLDetector(object):
     def __init__(self):
@@ -40,6 +51,8 @@ class TLDetector(object):
 
         self.upcoming_red_light_pub = rospy.Publisher('/traffic_waypoint', Int32, queue_size=1)
 
+        self.camera_image = None
+
         self.bridge = CvBridge()
         self.light_classifier = TLClassifier()
         self.listener = tf.TransformListener()
@@ -49,7 +62,21 @@ class TLDetector(object):
         self.last_wp = -1
         self.state_count = 0
 
+        self.rate = rospy.Rate(0.5)
+
+        self.stopline_wpts = None
+
+        while not rospy.is_shutdown():
+            if self.camera_image and self.stopline_wpts:
+                self.detect_and_publish()
+            self.rate.sleep()
+
         rospy.spin()
+
+
+    def dist(self, p, q):
+        return math.sqrt((p.x-q.x)**2 + (p.y-q.y)**2)
+
 
     def pose_cb(self, msg):
         self.pose = msg
@@ -62,9 +89,42 @@ class TLDetector(object):
 
     def waypoints_cb(self, waypoints):
         self.waypoints = waypoints
+        stopline_poses = self.config["stop_line_positions"]
+        stopline_poses = [get_coord(point) for point in stopline_poses]
+        self.stopline_wpts = sorted([self.get_closest_waypoint(stopline) for stopline in stopline_poses])
+        rospy.loginfo("Get stopline waypoints, total: %d"%len(self.stopline_wpts))
+
 
     def traffic_cb(self, msg):
         self.lights = msg.lights
+
+    def detect_and_publish(self):
+        img = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
+        img_path = "camera.png"
+        cv2.imwrite(img_path, img)
+        red_light = detect_redlight(img_path)
+        #red_light = True
+        #red_light = False
+
+        if red_light:
+            # TODO: get the closest waypoint
+            car_wpt = self.get_closest_waypoint(self.pose.pose.position)
+            rospy.loginfo("Find red light! Adjusting now")
+
+            find_next_wpt = False
+            for stopline_wpt in self.stopline_wpts:
+                if stopline_wpt > car_wpt:
+                    find_next_wpt = True
+                    self.upcoming_red_light_pub.publish(Int32(stopline_wpt))
+                    rospy.loginfo("Car wpt: %d Stopline wpt: %d"%(car_wpt, stopline_wpt))
+                    break
+            if not find_next_wpt:
+                self.upcoming_red_light_pub.publish(Int32(self.stopline_wpts[0]))
+
+        else:
+            rospy.loginfo("red light not found")
+            self.upcoming_red_light_pub.publish(Int32(-1))
+
 
     def image_cb(self, msg):
         """Identifies red lights in the incoming camera image and publishes the index
@@ -76,10 +136,18 @@ class TLDetector(object):
         """
         self.has_image = True
         self.camera_image = msg
-        light_wp, state = self.process_traffic_lights()
+        #light_wp, state = self.process_traffic_lights()
 
         #rospy.loginfo("get image data")
         #self.upcoming_red_light_pub.publish(Int32(1))
+
+                #red_light = False
+        #red_light = detect_redlight(img_path)
+
+        # if red_light:
+        #     rospy.loginfo("Find red light.")
+        # else:
+        #     rospy.loginfo("Not found.")
 
 
         
@@ -115,7 +183,17 @@ class TLDetector(object):
 
         """
         #TODO implement
-        return 0
+        best_idx = 0
+        best_dist = 99999
+
+        for i, wpt in enumerate(self.waypoints.waypoints):
+            wpt_pose = wpt.pose.pose.position
+            d = self.dist(pose, wpt_pose)
+            if d < best_dist:
+                best_dist = d
+                best_idx = i
+
+        return best_idx
 
     def get_light_state(self, light):
         """Determines the current color of the traffic light

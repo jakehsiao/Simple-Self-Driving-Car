@@ -7,6 +7,7 @@ from std_msgs.msg import Int32
 
 import math
 import numpy as np
+import tf
 
 from rotation import rotate
 import copy
@@ -27,7 +28,7 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
 LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
-TL_DECAY_RATE = 0.25 # The deceleration in waypoints when the traffic light is red
+TL_DECAY_RATE = 0.125 # The deceleration in waypoints when the traffic light is red
 
 
 class WaypointUpdater(object):
@@ -54,34 +55,35 @@ class WaypointUpdater(object):
 
         rospy.loginfo("### Waypoint updator inited")
 
+        rate = rospy.Rate(8)
+
+        while not rospy.is_shutdown():
+            if self.current_pose and self.base_wpts:
+                self.update()
+            rate.sleep()
+
         rospy.spin()
 
     def pose_cb(self, msg):
         # TODO: Implement
         self.current_pose = msg
-        rospy.loginfo("Pose x: %f"%msg.pose.position.x)
+
+    def update(self):
         closest_dist = float("inf")
         self.closest_wpt = self.base_wpts.waypoints[0]
         d1 = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
         for i in range(len(self.base_wpts.waypoints)):
             wpt = self.base_wpts.waypoints[i]
-            dist = d1(msg.pose.position, wpt.pose.pose.position)
+            dist = d1(self.current_pose.pose.position, wpt.pose.pose.position)
             if dist < closest_dist:
                 closest_dist = dist
                 self.closest_wpt_id = i
                 self.closest_wpt = wpt
 
         # know whether the closest one is on the front
-        pos_to_vector = lambda p: np.array([p.x, p.y, p.z])
-        ori_to_vector = lambda p: np.array([p.x, p.y, p.z, p.w])  # note that the ros represent the orientation in x,y,z,w but the utils in w,x,y,z
-        cpose = pos_to_vector(self.current_pose.pose.position)
-        cori = ori_to_vector(self.current_pose.pose.orientation)
-        ppose = pos_to_vector(self.closest_wpt.pose.pose.position)
-        ppose_car = rotate(ppose-cpose, cori)
-
-        if ppose_car[0] <= 0.5: # if the closest waypoint is not on the front of the car
-            self.closest_wpt_id += 1
-            self.closest_wpt_id %= self.num_base_wpts
+        self.closest_wpt_id = self.get_next_waypoint(self.current_pose.pose, self.closest_wpt_id)
+        self.closest_wpt_id %= self.num_base_wpts
+        self.closest_wpt = self.base_wpts.waypoints[self.closest_wpt_id]
 
         new_wpts = Lane()
         #raw_new_wpts = []
@@ -102,21 +104,28 @@ class WaypointUpdater(object):
         #ref_yaw = self.closest_wpt.twist.twist.angular.z
         #rospy.loginfo("Nearest waypoint: %d, RefV: %f, RefYaw: %f"%(self.closest_wpt_id, ref_v, ref_yaw))
 
-        # for i in range(len(new_wpts.waypoints)):
-        #     base_wpt = new_wpts.waypoints[i]
-        #     wpt = Waypoint()
-        #     wpt.pose.pose.position = base_wpt.pose.pose.position
-        #     wpt.pose.pose.orientation = base_wpt.pose.pose.orientation
-        #     wpt.twist.twist.linear.x = base_wpt.twist.twist.linear.x
-        #     wpt.twist.twist.angular.z = base_wpt.twist.twist.angular.z
-        #     new_wpts.waypoints[i] = wpt
+        # debug
+        #self.final_waypoints_pub.publish(new_wpts)
+        #return
+        
+
+        for i in range(len(new_wpts.waypoints)):
+            base_wpt = new_wpts.waypoints[i]
+            wpt = Waypoint()
+            wpt.pose.pose.position = base_wpt.pose.pose.position
+            wpt.pose.pose.orientation = base_wpt.pose.pose.orientation
+            wpt.twist.twist.linear.x = base_wpt.twist.twist.linear.x
+            wpt.twist.twist.angular.z = base_wpt.twist.twist.angular.z
+            new_wpts.waypoints[i] = wpt
 
         # debug
         #new_wpts.waypoints = raw_new_wpts
+        #debug
+        #self.final_waypoints_pub.publish(new_wpts)
+        #return
 
-        rospy.loginfo("traffic: %d"%self.traffic_wpt_id)
 
-        if self.traffic_wpt_id != -1: # have traffic light
+        if self.traffic_wpt_id and self.traffic_wpt_id != -1: # have traffic light
             if self.traffic_wpt_id > self.closest_wpt_id:
                 next_decay_wpt_id = self.traffic_wpt_id - self.closest_wpt_id
             else:
@@ -124,8 +133,8 @@ class WaypointUpdater(object):
             num_decay_wpts = 0
             decay_ongoing = True
 
-            # stop in next 5 waypoints
-            for i in range(5):
+            # stop in next 20 waypoints
+            for i in range(20):
                 stop_wpt_id = next_decay_wpt_id + i
                 if stop_wpt_id < len(new_wpts.waypoints):
                     self.set_waypoint_velocity(new_wpts.waypoints, stop_wpt_id, 0)
@@ -143,6 +152,41 @@ class WaypointUpdater(object):
 
         self.final_waypoints_pub.publish(new_wpts)
         rospy.loginfo("waypoints published " + str(self.closest_wpt_id) + " " + str(end_wpt_id))
+        # now_time = rospy.get_time()
+        # delta_t = now_time - self.last_timestamp
+        # self.last_timestamp = now_time
+        # rospy.loginfo("Time used: %.3f"%delta_t)
+
+    def get_next_waypoint(self, pose, index):
+	"""Identifies the first waypoint that is currently ahead of the car
+        Args:
+            index(int): index of the closest waypoint in self.waypoints
+
+        Returns:
+            int: index of the first waypoint currently ahead of the car
+
+	"""
+        # At first I try to use rotation matrix, then I found that
+        # use tf.euler_from_quaternion is better
+        # btw, this tf is not tensorflow
+        next_index = index 
+        p1 = pose.position
+        p2 = self.base_wpts.waypoints[index].pose.pose.position
+        heading = math.atan2( (p2.y-p1.y),(p2.x-p1.x) );
+        quaternion = (
+                pose.orientation.x,
+                pose.orientation.y,
+                pose.orientation.z,
+                pose.orientation.w)
+        euler = tf.transformations.euler_from_quaternion(quaternion)
+        yaw = euler[2]
+        angle = abs(yaw-heading)
+
+        if angle > math.pi/4:
+            next_index += 1
+        
+        return next_index
+
         
 
     def waypoints_cb(self, waypoints):

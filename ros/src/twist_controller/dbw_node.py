@@ -60,6 +60,7 @@ class DBWNode(object):
         # self.controller = TwistController(<Arguments you wish to provide>)
         self.pid = PID(-0.9, -0.001, -0.07, decel_limit, accel_limit)
         self.lowpass_filter = LowPassFilter(1.0, 2.0) # the less the value, the more smooth
+        self.yaw_lowpass = LowPassFilter(1.0, 1.0)
         self.yaw_controller = YawController(wheel_base, steer_ratio, 0, max_lat_accel, max_steer_angle)
         self.brake_factor = vehicle_mass * wheel_radius
         self.brake_deadband = brake_deadband
@@ -122,8 +123,10 @@ class DBWNode(object):
                     brake_cmd = self.brake_factor * (-acc) + self.brake_deadband
 
                 steer_cmd = self.yaw_controller.get_steering(ref_v, ref_yaw, cur_v)
+                steer_cmd = self.yaw_lowpass.filt(steer_cmd)
                 self.publish(thro_cmd, brake_cmd, steer_cmd)
                 rospy.loginfo("Publish:"+str(thro_cmd)+"  "+str(steer_cmd))
+                rospy.loginfo("Time used: %.3f"%dt)
             else:
                 self.pid.reset()
             rate.sleep()
