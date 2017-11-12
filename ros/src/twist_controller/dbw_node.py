@@ -60,7 +60,7 @@ class DBWNode(object):
         # self.controller = TwistController(<Arguments you wish to provide>)
         self.pid = PID(-0.9, -0.001, -0.07, decel_limit, accel_limit)
         self.lowpass_filter = LowPassFilter(1.0, 2.0) # the less the value, the more smooth
-        self.yaw_lowpass = LowPassFilter(1.0, 1.0)
+        #self.yaw_lowpass = LowPassFilter(1.0, 1.0)
         self.yaw_controller = YawController(wheel_base, steer_ratio, 0, max_lat_accel, max_steer_angle)
         self.brake_factor = vehicle_mass * wheel_radius
         self.brake_deadband = brake_deadband
@@ -74,10 +74,11 @@ class DBWNode(object):
         # subscribe
         rospy.Subscriber("/current_velocity", TwistStamped, self.current_velocity_cb)
         rospy.Subscriber("/twist_cmd", TwistStamped, self.twist_cmd_cb)
-        rospy.Subscriber("/dbw_enabled", Bool, self.dbw_enabled_cb)
+        rospy.Subscriber("/vehicle/dbw_enabled", Bool, self.dbw_enabled_cb)
 
 
-        rospy.loginfo("### Controller initialized Yeah")
+        rospy.loginfo("### Final submission with dbw")
+        rospy.loginfo("### Controller initialized Yeah 3x Speed")
 
         self.loop()
 
@@ -87,9 +88,6 @@ class DBWNode(object):
             # TODO: Get predicted throttle, brake, and steering using `twist_controller`
             # You should only publish the control commands if dbw is enabled
             # throttle, brake, steering = self.controller.control(<proposed linear velocity>,
-            #                                                     <proposed angular velocity>,
-            #                                                     <current linear velocity>,
-            #                                                     <dbw status>,
             #                                                     <any other argument you need>)
             # if <dbw is enabled>:
             #   self.publish(throttle, brake, steer)
@@ -106,6 +104,10 @@ class DBWNode(object):
 
             if self.twist_cmd and self.current_velocity:
                 ref_v = self.twist_cmd.twist.linear.x
+                # play sth!
+                rospy.loginfo("RefV B4: %f"%ref_v)
+                #ref_v = ref_v * 3
+                rospy.loginfo("RefV Afta: %f"%ref_v)
                 ref_yaw = self.twist_cmd.twist.angular.z
                 cur_v = self.current_velocity.twist.linear.x
                 err_v = cur_v - ref_v
@@ -123,7 +125,7 @@ class DBWNode(object):
                     brake_cmd = self.brake_factor * (-acc) + self.brake_deadband
 
                 steer_cmd = self.yaw_controller.get_steering(ref_v, ref_yaw, cur_v)
-                steer_cmd = self.yaw_lowpass.filt(steer_cmd)
+                #steer_cmd = self.yaw_lowpass.filt(steer_cmd)
                 self.publish(thro_cmd, brake_cmd, steer_cmd)
                 rospy.loginfo("Publish:"+str(thro_cmd)+"  "+str(steer_cmd))
                 rospy.loginfo("Time used: %.3f"%dt)
