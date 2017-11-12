@@ -52,13 +52,14 @@ class WaypointUpdater(object):
         self.num_base_wpts = 0
         self.traffic_wpt_id = -1
 
-        rospy.loginfo("## Waypoint updator inited")
+        rospy.loginfo("### Waypoint updator inited")
 
         rospy.spin()
 
     def pose_cb(self, msg):
         # TODO: Implement
         self.current_pose = msg
+        rospy.loginfo("Pose x: %f"%msg.pose.position.x)
         closest_dist = float("inf")
         self.closest_wpt = self.base_wpts.waypoints[0]
         d1 = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
@@ -86,15 +87,29 @@ class WaypointUpdater(object):
         #raw_new_wpts = []
         end_wpt_id = (self.closest_wpt_id+LOOKAHEAD_WPS)%self.num_base_wpts
         if end_wpt_id < self.closest_wpt_id:
-            #raw_new_wpts = self.base_wpts.waypoints[self.closest_wpt_id:] + self.base_wpts.waypoints[:end_wpt_id]
             new_wpts.waypoints = self.base_wpts.waypoints[self.closest_wpt_id:] + self.base_wpts.waypoints[:end_wpt_id]
+            #new_wpts.waypoints = copy.deepcopy(self.base_wpts.waypoints[self.closest_wpt_id:] + self.base_wpts.waypoints[:end_wpt_id])
         else:
-            #raw_new_wpts = self.base_wpts.waypoints[self.closest_wpt_id:end_wpt_id]
             new_wpts.waypoints = self.base_wpts.waypoints[self.closest_wpt_id:end_wpt_id]
+            #new_wpts.waypoints = copy.deepcopy(self.base_wpts.waypoints[self.closest_wpt_id:end_wpt_id])
         # copy the wpts
         #for wpt in raw_new_wpts:
         #    new_wpt = copy.deepcopy(wpt)
         #    new_wpts.waypoints.append(new_wpt)
+
+        # debug the copy
+        #ref_v = self.closest_wpt.twist.twist.linear.x
+        #ref_yaw = self.closest_wpt.twist.twist.angular.z
+        #rospy.loginfo("Nearest waypoint: %d, RefV: %f, RefYaw: %f"%(self.closest_wpt_id, ref_v, ref_yaw))
+
+        # for i in range(len(new_wpts.waypoints)):
+        #     base_wpt = new_wpts.waypoints[i]
+        #     wpt = Waypoint()
+        #     wpt.pose.pose.position = base_wpt.pose.pose.position
+        #     wpt.pose.pose.orientation = base_wpt.pose.pose.orientation
+        #     wpt.twist.twist.linear.x = base_wpt.twist.twist.linear.x
+        #     wpt.twist.twist.angular.z = base_wpt.twist.twist.angular.z
+        #     new_wpts.waypoints[i] = wpt
 
         # debug
         #new_wpts.waypoints = raw_new_wpts
@@ -102,7 +117,10 @@ class WaypointUpdater(object):
         rospy.loginfo("traffic: %d"%self.traffic_wpt_id)
 
         if self.traffic_wpt_id != -1: # have traffic light
-            next_decay_wpt_id = self.traffic_wpt_id - self.closest_wpt_id
+            if self.traffic_wpt_id > self.closest_wpt_id:
+                next_decay_wpt_id = self.traffic_wpt_id - self.closest_wpt_id
+            else:
+                next_decay_wpt_id = (self.num_base_wpts - self.closest_wpt_id) + self.traffic_wpt_id
             num_decay_wpts = 0
             decay_ongoing = True
 
@@ -113,7 +131,7 @@ class WaypointUpdater(object):
                     self.set_waypoint_velocity(new_wpts.waypoints, stop_wpt_id, 0)
 
             # and decay in previous waypoints
-            while decay_ongoing and next_decay_wpt_id >= 0:
+            while decay_ongoing and next_decay_wpt_id >= 0 and next_decay_wpt_id < len(new_wpts.waypoints):
                 new_velocity = num_decay_wpts * TL_DECAY_RATE
                 if self.get_waypoint_velocity(new_wpts.waypoints[next_decay_wpt_id]) < new_velocity:
                     decay_ongoing = False # decay finished

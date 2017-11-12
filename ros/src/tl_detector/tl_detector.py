@@ -53,6 +53,12 @@ class TLDetector(object):
 
     def pose_cb(self, msg):
         self.pose = msg
+        # rospy.loginfo("Get pose data")
+        # if self.pose.pose.position.x > 1240:
+        #     rospy.loginfo("Publishing debug info")
+        #     self.upcoming_red_light_pub.publish(Int32(-1))
+        # else:
+        #     self.upcoming_red_light_pub.publish(Int32(400))
 
     def waypoints_cb(self, waypoints):
         self.waypoints = waypoints
@@ -72,11 +78,18 @@ class TLDetector(object):
         self.camera_image = msg
         light_wp, state = self.process_traffic_lights()
 
+        #rospy.loginfo("get image data")
+        #self.upcoming_red_light_pub.publish(Int32(1))
+
+
+        
         '''
         Publish upcoming red lights at camera frequency.
         Each predicted state has to occur `STATE_COUNT_THRESHOLD` number
         of times till we start using it. Otherwise the previous stable state is
         used.
+        '''
+
         '''
         if self.state != state:
             self.state_count = 0
@@ -89,6 +102,7 @@ class TLDetector(object):
         else:
             self.upcoming_red_light_pub.publish(Int32(self.last_wp))
         self.state_count += 1
+        '''
 
     def get_closest_waypoint(self, pose):
         """Identifies the closest path waypoint to the given position
