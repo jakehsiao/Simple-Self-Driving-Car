@@ -10,6 +10,13 @@ Jacob Hsiao|1499975101@qq.com
 
 This is the project repo for the final project of the Udacity Self-Driving Car Nanodegree: Programming a Real Self-Driving Car. For more information about the project, see the project introduction [here](https://classroom.udacity.com/nanodegrees/nd013/parts/6047fe34-d93c-4f50-8336-b70ef10cb4b2/modules/e1a23b06-329a-4684-a717-ad476f0d8dff/lessons/462c933d-9f24-42d3-8bdc-a08a5fc866e4/concepts/5ab4b122-83e6-436d-850f-9f4d26627fd9).
 
+### Approaches
+- By providing the waypoints and stopline waypoints, the car can drive around the track without breaking the rules.
+- By calculating the distances and angles according to car's orientation of waypoints, find the nearest one that in front of the car and the next 40 points and load them to waypoint follower.
+- To control the speed and steer of the car, PID control algorithm is used to control the throttle and steering angle.
+- To detect traffic lights, YOLO network is used. When a traffic light is detected, use the sum of RGB values of the pixels of the detected part to get the state of it.
+- When a red light is detected, the nearest stopline waypoint is found at first, then the speed of several waypoints behind that waypoint decrease gradually.
+
 ### Native Installation
 
 * Be sure that your workstation is running Ubuntu 16.04 Xenial Xerus or Ubuntu 14.04 Trusty Tahir. [Ubuntu downloads can be found here](https://www.ubuntu.com/download/desktop).
